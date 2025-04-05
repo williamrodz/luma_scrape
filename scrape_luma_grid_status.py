@@ -17,6 +17,14 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 if not SUPABASE_URL or not SUPABASE_URL:
     print("Error: SUPABASE_URL or SUPABASE_KEY not set")
     exit(1)
+else:
+    print("Supabase credentials loaded successfully.")
+    # Uncomment the next line to see the URL and Key (for debugging purposes only)
+    # print(f"URL: {SUPABASE_URL}, Key: {SUPABASE_KEY[:4]}...")  # Print only part of the key for security
+    print(f"URL: {SUPABASE_URL[0:5]}")  # Print only part of the key for security
+    print(f"KEY: {SUPABASE_KEY[0:5]}")  # Print only part of the key for security
+
+    pass
 
 def scrape_luma():
     headers = {
@@ -94,5 +102,5 @@ if __name__ == "__main__":
         print()
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"An error occurred:\n{e}")
         # Optionally, you could log the error or handle it differently here
