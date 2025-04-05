@@ -9,15 +9,14 @@ from datetime import datetime
 from dotenv import load_dotenv
 import os
 
+load_dotenv()  # loads .env into os.environ
 URL = "https://lumapr.com/system-overview/?lang=en"
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-def get_svg_value(soup, div_id):
-    div = soup.find("div", id=div_id)
-    if div:
-        text = div.find("text", class_="value-text")
-        if text:
-            return text.text.strip()
-    return None
+if not SUPABASE_URL or not SUPABASE_URL:
+    print("Error: SUPABASE_URL or SUPABASE_KEY not set")
+    exit(1)
 
 def scrape_luma():
     headers = {
@@ -75,12 +74,8 @@ def scrape_luma():
     return results
 
 def publish_results_to_db(results):
-    # Set up
-    load_dotenv()  # loads .env into os.environ
 
-    url = os.environ["SUPABASE_URL"]
-    key = os.environ["SUPABASE_KEY"]
-    supabase: Client = create_client(url, key)
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     # Insert your data
 
@@ -93,8 +88,10 @@ if __name__ == "__main__":
         results = scrape_luma()
         print("Scraping successful. Results:")
         print(results)
+        print()
         publishing_response = publish_results_to_db(results)
         print(publishing_response)
+        print()
 
     except Exception as e:
         print(f"An error occurred: {e}")
