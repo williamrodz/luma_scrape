@@ -6,10 +6,16 @@ import pytz
 # For publishing to the database
 from supabase import create_client, Client
 from datetime import datetime
-from dotenv import load_dotenv
 import os
 
-load_dotenv()  # loads .env into os.environ
+# Only try to load .env if running locally
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # loads .env into os.environ
+except ImportError:
+    pass  # Skip if dotenv is not installed (like in GitHub Actions)
+
+
 URL = "https://lumapr.com/system-overview/?lang=en"
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
