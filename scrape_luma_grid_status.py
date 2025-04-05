@@ -1,9 +1,9 @@
-# fo
+# For scraping using BeautifulSoup and requests 
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 import pytz
-# For publishing to the database
+# For publishing to the database using Supabase
 from supabase import create_client, Client
 from datetime import datetime
 import os
@@ -19,8 +19,10 @@ except ImportError:
 URL = "https://lumapr.com/system-overview/?lang=en"
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+print(f"URL: {SUPABASE_URL[0:5]}")  # Print only part of the key for security
+print(f"KEY: {SUPABASE_KEY[0:5]}")  # Print only part of the key for security
 
-if not SUPABASE_URL or not SUPABASE_URL:
+if not SUPABASE_URL or not SUPABASE_KEY:
     print("Error: SUPABASE_URL or SUPABASE_KEY not set")
     exit(1)
 else:
