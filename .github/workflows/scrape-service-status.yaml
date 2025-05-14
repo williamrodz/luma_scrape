@@ -33,7 +33,6 @@ jobs:
       - name: Install Playwright Browsers
         run: |
           python -m playwright install
-          python -m playwright install-deps
       - name: Run scraper
         run: python scrape_service_status.py
 
