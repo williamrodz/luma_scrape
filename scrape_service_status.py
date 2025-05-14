@@ -16,14 +16,15 @@ from supabase import create_client, Client
 # Supabase credentials from environment
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")  # or anon key if using client-side
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
+print(f"URL: {SUPABASE_URL[0:5]}")  # Print only part of the key for security
+print(f"KEY: {SUPABASE_KEY[0:5]}")  # Print only part of the key for security
 
 def save_data_to_supabase(data):
     """
     Converts scraped outage data to a flat one-row dict and inserts into Supabase.
     """
+  supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
     row = {
         "timestamp": data["timestamp"],
         "last_update": data["last_update"]
@@ -48,6 +49,8 @@ def is_newer_last_update(scraped_last_update):
     Compares the new `last_update` value to the most recent one in Supabase.
     Returns True if new data is newer, False otherwise.
     """
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
     # Parse the new timestamp
     new_time = datetime.strptime(scraped_last_update, "%m/%d/%Y %I:%M %p")
 
