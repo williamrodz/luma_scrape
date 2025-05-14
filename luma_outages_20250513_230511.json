@@ -1,0 +1,48 @@
+{
+  "data": [
+    {
+      "Region": "Arecibo",
+      "Total customers": "177,369",
+      "Out of Service": "370",
+      "Planned Upgrades": "0"
+    },
+    {
+      "Region": "Bayamon",
+      "Total customers": "216,496",
+      "Out of Service": "2,138",
+      "Planned Upgrades": "0"
+    },
+    {
+      "Region": "Caguas",
+      "Total customers": "250,514",
+      "Out of Service": "552",
+      "Planned Upgrades": "0"
+    },
+    {
+      "Region": "Carolina",
+      "Total customers": "141,663",
+      "Out of Service": "3",
+      "Planned Upgrades": "0"
+    },
+    {
+      "Region": "Mayaguez",
+      "Total customers": "216,605",
+      "Out of Service": "949",
+      "Planned Upgrades": "0"
+    },
+    {
+      "Region": "Ponce",
+      "Total customers": "212,508",
+      "Out of Service": "154",
+      "Planned Upgrades": "0"
+    },
+    {
+      "Region": "San Juan",
+      "Total customers": "253,068",
+      "Out of Service": "30",
+      "Planned Upgrades": "0"
+    }
+  ],
+  "timestamp": "2025-05-14T03:05:11.168Z",
+  "last_update": "05/13/2025 11:05 PM"
+}

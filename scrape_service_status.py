@@ -4,6 +4,44 @@ import json
 from datetime import datetime
 import os
 
+# Only try to load .env if running locally
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # loads .env into os.environ
+except ImportError:
+    pass  # Skip if dotenv is not installed (like in GitHub Actions)
+
+from supabase import create_client, Client
+
+# Supabase credentials from environment
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")  # or anon key if using client-side
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+def save_data_to_supabase(data):
+    """
+    Converts scraped outage data to a flat one-row dict and inserts into Supabase.
+    """
+    row = {
+        "timestamp": data["timestamp"],
+        "last_update": data["last_update"]
+    }
+
+    for region in data["data"]:
+        key_suffix = region["Region"].lower().replace(" ", "_")
+        row[f"total_customers_{key_suffix}"] = int(region["Total customers"].replace(",", ""))
+        row[f"out_of_service_{key_suffix}"] = int(region["Out of Service"].replace(",", ""))
+        row[f"planned_upgrades_{key_suffix}"] = int(region["Planned Upgrades"].replace(",", ""))
+
+    response = supabase.table("outage_snapshot").insert(row).execute()
+    
+    if response
+        print("✅ Supabase insert successful.")
+    else:
+        print("❌ Supabase insert error:", response["error"])
+
 async def scrape_luma_outages():
     """
     Scrapes the outage data from the LUMA PR website using Playwright
@@ -119,6 +157,7 @@ async def main():
             for region in data['data']:
                 print(f"  {region['Region']}: {region['Total customers']} customers, {region['Out of Service']} out of service, {region['Planned Upgrades']} planned upgrades")
             print(f"Data saved to {filename}")
+            save_data_to_supabase(data)
             
             # Also save a latest.json for easy access
             with open('latest.json', 'w', encoding='utf-8') as f:
