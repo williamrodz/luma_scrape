@@ -23,7 +23,7 @@ def save_data_to_supabase(data):
     """
     Converts scraped outage data to a flat one-row dict and inserts into Supabase.
     """
-  supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     row = {
         "timestamp": data["timestamp"],
