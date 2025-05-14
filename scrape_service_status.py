@@ -2,20 +2,21 @@ import asyncio
 from playwright.async_api import async_playwright
 import json
 from datetime import datetime
+from supabase import create_client, Client
+
 import os
 
 # Only try to load .env if running locally
-try:
-    from dotenv import load_dotenv
-    load_dotenv()  # loads .env into os.environ
-except ImportError:
-    pass  # Skip if dotenv is not installed (like in GitHub Actions)
+# try:
+#     from dotenv import load_dotenv
+#     load_dotenv()  # loads .env into os.environ
+# except ImportError:
+#     pass  # Skip if dotenv is not installed (like in GitHub Actions)
 
-from supabase import create_client, Client
 
 # Supabase credentials from environment
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")  # or anon key if using client-side
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 print(f"URL: {SUPABASE_URL[0:5]}")  # Print only part of the key for security
 print(f"KEY: {SUPABASE_KEY[0:5]}")  # Print only part of the key for security
 
