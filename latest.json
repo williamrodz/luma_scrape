@@ -9,13 +9,13 @@
     {
       "Region": "Bayamon",
       "Total customers": "216,496",
-      "Out of Service": "2,097",
+      "Out of Service": "2,138",
       "Planned Upgrades": "0"
     },
     {
       "Region": "Caguas",
       "Total customers": "250,514",
-      "Out of Service": "552",
+      "Out of Service": "553",
       "Planned Upgrades": "0"
     },
     {
@@ -27,7 +27,7 @@
     {
       "Region": "Mayaguez",
       "Total customers": "216,605",
-      "Out of Service": "949",
+      "Out of Service": "728",
       "Planned Upgrades": "0"
     },
     {
@@ -39,10 +39,10 @@
     {
       "Region": "San Juan",
       "Total customers": "253,068",
-      "Out of Service": "65",
+      "Out of Service": "30",
       "Planned Upgrades": "0"
     }
   ],
-  "timestamp": "2025-05-14T02:28:17.722Z",
-  "last_update": "05/13/2025 10:25 PM"
+  "timestamp": "2025-05-14T03:18:00.154Z",
+  "last_update": "05/13/2025 11:15 PM"
 }

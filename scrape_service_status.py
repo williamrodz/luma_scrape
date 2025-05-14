@@ -37,10 +37,40 @@ def save_data_to_supabase(data):
 
     response = supabase.table("outage_snapshot").insert(row).execute()
     
-    if response
+    if response:
         print("✅ Supabase insert successful.")
     else:
         print("❌ Supabase insert error:", response["error"])
+
+
+def is_newer_last_update(scraped_last_update):
+    """
+    Compares the new `last_update` value to the most recent one in Supabase.
+    Returns True if new data is newer, False otherwise.
+    """
+    # Parse the new timestamp
+    new_time = datetime.strptime(scraped_last_update, "%m/%d/%Y %I:%M %p")
+
+    # Query the latest row
+    response = supabase.table("outage_snapshot").select("last_update").order("timestamp", desc=True).limit(1).execute()
+
+    if response.data and len(response.data) > 0:
+        latest = response.data[0]["last_update"]
+        try:
+            latest_time = datetime.strptime(latest, "%m/%d/%Y %I:%M %p")
+            print(f"Latest timestamp in DB: {latest_time}")
+            print(f"New timestamp: {new_time}")
+            if new_time > latest_time:
+                print("🆕 Newer data found.")
+                return True
+            else:
+                print("🔄 No new data found.")
+                return False
+        except Exception as e:
+            print("⚠️ Error parsing last_update from DB:", e)
+            return True  # if in doubt, insert
+    else:
+        return True  # table is empty
 
 async def scrape_luma_outages():
     """
@@ -157,7 +187,13 @@ async def main():
             for region in data['data']:
                 print(f"  {region['Region']}: {region['Total customers']} customers, {region['Out of Service']} out of service, {region['Planned Upgrades']} planned upgrades")
             print(f"Data saved to {filename}")
-            save_data_to_supabase(data)
+
+            if is_newer_last_update(data["last_update"]):
+                print("Newer data found, saving to Supabase...")
+                # Save to Supabase
+                save_data_to_supabase(data)
+            else:
+                print("No new data to save to Supabase.")
             
             # Also save a latest.json for easy access
             with open('latest.json', 'w', encoding='utf-8') as f:
