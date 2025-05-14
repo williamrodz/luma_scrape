@@ -65,10 +65,32 @@ async def scrape_luma_outages():
                         }
                     });
                     
-                    return {
-                        data: rows,
-                        timestamp: new Date().toISOString()
-                    };
+                    // Find the "Last update:" timestamp
+                  let lastUpdate = null;
+                  const textElements = document.querySelectorAll('*');
+                  for (const element of textElements) {
+                      if (element.textContent && element.textContent.includes('Last update:')) {
+                          const text = element.textContent;
+                          const match = text.match(/Last update:\s*(.+)/);
+                          if (match && match[1]) {
+                              lastUpdate = match[1].trim();
+
+                              // Trim to include only up to the first AM or PM (case-insensitive)
+                              const timeMatch = lastUpdate.match(/.*?(AM|PM)/i);
+                              if (timeMatch) {
+                                  lastUpdate = timeMatch[0];
+                              }
+
+                              break;
+                          }
+                      }
+                  }
+
+                  return {
+                      data: rows,
+                      timestamp: new Date().toISOString(),
+                      last_update: lastUpdate
+                  };
                 }
             ''')
             
