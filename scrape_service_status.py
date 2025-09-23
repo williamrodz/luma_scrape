@@ -2,6 +2,7 @@ import asyncio
 from playwright.async_api import async_playwright
 import json
 from datetime import datetime
+from typing import Dict, Any, List
 from supabase import create_client, Client
 
 import os
@@ -17,11 +18,15 @@ import os
 # Supabase credentials from environment
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+SUPABASE_CONFIGURED = bool(SUPABASE_URL and SUPABASE_KEY)
 
-def save_data_to_supabase(data):
+def save_data_to_supabase(data: Dict[str, Any]):
     """
     Converts scraped outage data to a flat one-row dict and inserts into Supabase.
     """
+    if not SUPABASE_CONFIGURED:
+        print("Supabase credentials not configured; skipping save.")
+        return
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     row = {
@@ -43,11 +48,13 @@ def save_data_to_supabase(data):
         print("❌ Supabase insert error:", response["error"])
 
 
-def is_newer_last_update(scraped_last_update):
+def is_newer_last_update(scraped_last_update: str) -> bool:
     """
     Compares the new `last_update` value to the most recent one in Supabase.
     Returns True if new data is newer, False otherwise.
     """
+    if not SUPABASE_CONFIGURED:
+        return True
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     # Parse the new timestamp
@@ -74,7 +81,7 @@ def is_newer_last_update(scraped_last_update):
     else:
         return True  # table is empty
 
-async def scrape_luma_outages():
+async def scrape_luma_outages() -> Dict[str, Any]:
     """
     Scrapes the outage data from the LUMA PR website using Playwright
     """
@@ -144,13 +151,11 @@ async def scrape_luma_outages():
                           const match = text.match(/Last update:\s*(.+)/);
                           if (match && match[1]) {
                               lastUpdate = match[1].trim();
-
                               // Trim to include only up to the first AM or PM (case-insensitive)
                               const timeMatch = lastUpdate.match(/.*?(AM|PM)/i);
                               if (timeMatch) {
                                   lastUpdate = timeMatch[0];
                               }
-
                               break;
                           }
                       }

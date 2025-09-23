@@ -2,6 +2,7 @@ import os
 import time
 import hashlib
 from datetime import datetime
+from typing import List, Dict, Optional
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -14,11 +15,12 @@ from supabase import create_client, Client
 # Supabase setup
 supabase_url = os.environ.get("SUPABASE_URL")
 supabase_key = os.environ.get("SUPABASE_KEY")
+SUPABASE_CONFIGURED = bool(supabase_url and supabase_key)
 
-def setup_driver():
-    """Set up a headless Chrome browser"""
+def setup_driver() -> webdriver.Chrome:
+    """Set up a headless Chrome browser."""
     chrome_options = Options()
-    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     
@@ -31,8 +33,8 @@ def setup_driver():
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
-def scrape_luma_outages():
-    """Scrape outage data from LUMA PR website using Selenium"""
+def scrape_luma_outages() -> List[Dict[str, Optional[str]]]:
+    """Scrape outage data from LUMA PR website using Selenium."""
     url = "https://lumapr.com/notable-outages/?lang=en"
     
     try:
@@ -50,7 +52,7 @@ def scrape_luma_outages():
         # Find all table rows
         rows = driver.find_elements(By.CSS_SELECTOR, "div.dataTables_scrollBody table tbody tr")
         
-        outages = []
+        outages: List[Dict[str, Optional[str]]] = []
         for row in rows:
             cells = row.find_elements(By.TAG_NAME, "td")
             if len(cells) >= 7:
@@ -67,18 +69,25 @@ def scrape_luma_outages():
                 
                 # Parse dates
                 try:
-                    outage_time = datetime.strptime(outage_reported, '%B %d %H:%M\'')
-                    # Add current year since it's not in the string
-                    outage_time = outage_time.replace(year=datetime.now().year)
+                    outage_time = datetime.strptime(outage_reported, '%B %d %I:%M %p')
                 except ValueError:
-                    outage_time = None
+                    # Fallback for strings like May 10 13:45'
+                    try:
+                        outage_time = datetime.strptime(outage_reported.strip("'"), '%B %d %H:%M')
+                    except ValueError:
+                        outage_time = None
+                if outage_time:
+                    outage_time = outage_time.replace(year=datetime.now().year)
                 
                 try:
-                    restoration_time = datetime.strptime(est_restoration, '%B %d %H:%M\'')
-                    # Add current year since it's not in the string
-                    restoration_time = restoration_time.replace(year=datetime.now().year)
+                    restoration_time = datetime.strptime(est_restoration, '%B %d %I:%M %p')
                 except ValueError:
-                    restoration_time = None
+                    try:
+                        restoration_time = datetime.strptime(est_restoration.strip("'"), '%B %d %H:%M')
+                    except ValueError:
+                        restoration_time = None
+                if restoration_time:
+                    restoration_time = restoration_time.replace(year=datetime.now().year)
                 
                 outage_data = {
                     "id": unique_id,
@@ -105,7 +114,10 @@ def scrape_luma_outages():
             driver.quit()
         return []
 
-def store_outages_in_supabase(outages):
+def store_outages_in_supabase(outages: List[Dict[str, Optional[str]]]):
+    if not SUPABASE_CONFIGURED:
+        print("Supabase credentials not configured; skipping store.")
+        return
     supabase = create_client(supabase_url, supabase_key)
 
     if not outages:
