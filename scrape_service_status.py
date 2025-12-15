@@ -1,7 +1,7 @@
 import asyncio
 from playwright.async_api import async_playwright
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, List
 from supabase import create_client, Client
 
@@ -81,6 +81,49 @@ def is_newer_last_update(scraped_last_update: str) -> bool:
     else:
         return True  # table is empty
 
+def has_recent_data_in_db(minutes: int = 15) -> bool:
+    """
+    Checks if there's data in the database from within the last N minutes.
+    Returns True if recent data exists, False otherwise.
+    """
+    if not SUPABASE_CONFIGURED:
+        print("Supabase credentials not configured; cannot check for recent data.")
+        return False
+    
+    try:
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        
+        # Calculate the cutoff time (now minus N minutes)
+        cutoff_time = datetime.utcnow() - timedelta(minutes=minutes)
+        cutoff_iso = cutoff_time.isoformat() + 'Z'
+        
+        # Query the latest row
+        response = supabase.table("outage_snapshot").select("timestamp").order("timestamp", desc=True).limit(1).execute()
+        
+        if response.data and len(response.data) > 0:
+            latest_timestamp_str = response.data[0]["timestamp"]
+            # Parse the ISO timestamp from the database
+            latest_timestamp = datetime.fromisoformat(latest_timestamp_str.replace('Z', '+00:00'))
+            # Convert to UTC naive for comparison
+            if latest_timestamp.tzinfo:
+                latest_timestamp = latest_timestamp.replace(tzinfo=None)
+            
+            print(f"Latest data in DB: {latest_timestamp}")
+            print(f"Cutoff time (now - {minutes} min): {cutoff_time}")
+            
+            if latest_timestamp >= cutoff_time:
+                print(f"✅ Found recent data in DB (within last {minutes} minutes)")
+                return True
+            else:
+                print(f"⚠️ Latest data in DB is older than {minutes} minutes")
+                return False
+        else:
+            print("⚠️ No data found in database")
+            return False
+    except Exception as e:
+        print(f"⚠️ Error checking database for recent data: {e}")
+        return False  # If we can't check, assume no recent data (safer to fail)
+
 async def scrape_luma_outages() -> Dict[str, Any]:
     """
     Scrapes the outage data from the LUMA PR website using Playwright
@@ -99,7 +142,7 @@ async def scrape_luma_outages() -> Dict[str, Any]:
             await page.wait_for_selector('div.w-full.max-w-full.overflow-x-auto', timeout=30000)
             
             # Extract table data
-            table_data = await page.evaluate('''
+            table_data = await page.evaluate(r'''
                 () => {
                     const container = document.querySelector('div.w-full.max-w-full.overflow-x-auto');
                     if (!container) return null;
@@ -211,7 +254,21 @@ async def main():
             
     except Exception as e:
         print(f"Error during scraping: {str(e)}")
-        raise
+        
+        # Check if it's a timeout error and if we have recent data in DB
+        from playwright._impl._errors import TimeoutError as PlaywrightTimeoutError
+        
+        if isinstance(e, PlaywrightTimeoutError):
+            print("⏱️ Scraping timed out. Checking database for recent data...")
+            if has_recent_data_in_db(minutes=15):
+                print("✅ Recent data found in database. Skipping error (site may be temporarily unavailable).")
+                return  # Exit successfully without raising
+            else:
+                print("❌ No recent data in database. This is a real failure.")
+                raise  # Re-raise the error if no recent data
+        else:
+            # For other errors, raise as normal
+            raise
 
 if __name__ == "__main__":
     asyncio.run(main())
