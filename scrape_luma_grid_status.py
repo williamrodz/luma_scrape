@@ -39,6 +39,24 @@ def _safe_parse_int(value: Optional[str]) -> Optional[int]:
         return None
 
 
+def validate_results(results: Dict[str, Any]) -> None:
+    """
+    Validates that at least one data value is not None.
+    Raises ValueError if all data values are None.
+    """
+    # Exclude timestamp from validation (it's always set)
+    data_keys = [k for k in results.keys() if k != "timestamp"]
+    
+    # Check if all data values are None
+    all_none = all(results.get(key) is None for key in data_keys)
+    
+    if all_none:
+        raise ValueError(
+            "All scraped data values are None. This indicates the scraping failed "
+            "or the page structure has changed. No data will be saved to the database."
+        )
+
+
 def scrape_luma(timeout_seconds: int = 20) -> Dict[str, Any]:
     """Scrape LUMA system overview metrics and return a structured result dict."""
     with requests.Session() as session:
@@ -104,6 +122,10 @@ if __name__ == "__main__":
     # Run the scraper and publish results to the database
     try:
         results = scrape_luma()
+        
+        # Validate results before proceeding
+        validate_results(results)
+        
         print("Scraping successful. Results:")
         print(results)
         print()
@@ -114,4 +136,4 @@ if __name__ == "__main__":
 
     except Exception as e:
         print(f"An error occurred:\n{e}")
-        # Optionally, you could log the error or handle it differently here
+        raise  # Re-raise to fail the script
