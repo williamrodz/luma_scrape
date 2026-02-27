@@ -1,19 +1,18 @@
-import asyncio
-from playwright.async_api import async_playwright
+import requests
 import json
 from datetime import datetime, timedelta, timezone
 import sys
-from typing import Dict, Any, List
+from typing import Dict, Any
 from supabase import create_client, Client
 
 import os
 
 # Only try to load .env if running locally
-try:
-    from dotenv import load_dotenv
-    load_dotenv()  # loads .env into os.environ
-except ImportError:
-    pass  # Skip if dotenv is not installed (like in GitHub Actions)
+# try:
+#     from dotenv import load_dotenv
+#     load_dotenv()  # loads .env into os.environ
+# except ImportError:
+#     pass  # Skip if dotenv is not installed (like in GitHub Actions)
 
 
 # Supabase credentials from environment
@@ -23,9 +22,24 @@ SUPABASE_CONFIGURED = bool(SUPABASE_URL and SUPABASE_KEY)
 
 MAX_DATA_AGE_MINUTES = 30
 
+API_URL = "https://api.miluma.lumapr.com/miluma-outage-api/outage/regionsWithoutService"
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36",
+    "Origin": "https://miluma.lumapr.com",
+    "Referer": "https://miluma.lumapr.com/",
+}
+
+
+def fetch_outage_data(timeout_seconds: int = 20) -> Dict[str, Any]:
+    """Fetch outage data directly from the LUMA API."""
+    response = requests.get(API_URL, headers=DEFAULT_HEADERS, timeout=timeout_seconds)
+    response.raise_for_status()
+    return response.json()
+
+
 def save_data_to_supabase(data: Dict[str, Any]):
     """
-    Converts scraped outage data to a flat one-row dict and inserts into Supabase.
+    Converts API outage data to a flat one-row dict and inserts into Supabase.
     """
     if not SUPABASE_CONFIGURED:
         print("Supabase credentials not configured; skipping save.")
@@ -33,18 +47,31 @@ def save_data_to_supabase(data: Dict[str, Any]):
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     row = {
-        "timestamp": data["timestamp"],
-        "last_update": data["last_update"]
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "last_update": data["timestamp"],
     }
 
-    for region in data["data"]:
-        key_suffix = region["Region"].lower().replace(" ", "_")
-        row[f"total_customers_{key_suffix}"] = int(region["Total customers"].replace(",", ""))
-        row[f"out_of_service_{key_suffix}"] = int(region["Out of Service"].replace(",", ""))
-        row[f"planned_upgrades_{key_suffix}"] = int(region["Planned Upgrades"].replace(",", ""))
+    for region in data["regions"]:
+        key_suffix = region["name"].lower().replace(" ", "_")
+        row[f"total_customers_{key_suffix}"]        = region["totalClients"]
+        row[f"out_of_service_{key_suffix}"]         = region["totalClientsWithoutService"]
+        row[f"planned_upgrades_{key_suffix}"]       = region["totalClientsAffectedByPlannedOutage"]
+        row[f"with_service_{key_suffix}"]           = region["totalClientsWithService"]
+        row[f"load_shed_{key_suffix}"]              = region["totalClientsAffectedByLoadShed"]
+        row[f"pct_without_service_{key_suffix}"]    = region["percentageClientsWithoutService"]
+        row[f"pct_with_service_{key_suffix}"]       = region["percentageClientsWithService"]
+
+    totals = data["totals"]
+    row["totals_total_clients"]       = totals["totalClients"]
+    row["totals_without_service"]     = totals["totalClientsWithoutService"]
+    row["totals_with_service"]        = totals["totalClientsWithService"]
+    row["totals_planned"]             = totals["totalClientsAffectedByPlannedOutage"]
+    row["totals_load_shed"]           = totals["totalClientsAffectedByLoadShed"]
+    row["totals_pct_without_service"] = totals["totalPercentageWithoutService"]
+    row["totals_pct_with_service"]    = totals["totalPercentageWithService"]
 
     response = supabase.table("outage_snapshot").insert(row).execute()
-    
+
     if response:
         print("✅ Supabase insert successful.")
     else:
@@ -84,6 +111,7 @@ def is_newer_last_update(scraped_last_update: str) -> bool:
     else:
         return True  # table is empty
 
+
 def has_recent_data_in_db(minutes: int = MAX_DATA_AGE_MINUTES) -> bool:
     """
     Checks if there's data in the database from within the last N minutes.
@@ -92,10 +120,10 @@ def has_recent_data_in_db(minutes: int = MAX_DATA_AGE_MINUTES) -> bool:
     if not SUPABASE_CONFIGURED:
         print("Supabase credentials not configured; cannot check for recent data.")
         return False
-    
+
     try:
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        
+
         # Calculate the cutoff time (now minus N minutes)
         now = datetime.now(timezone.utc)
         cutoff_time = now - timedelta(minutes=minutes)
@@ -127,151 +155,53 @@ def has_recent_data_in_db(minutes: int = MAX_DATA_AGE_MINUTES) -> bool:
         print(f"⚠️ Error checking database for recent data: {e}")
         return False  # If we can't check, assume no recent data (safer to fail)
 
-async def scrape_luma_outages() -> Dict[str, Any]:
-    """
-    Scrapes the outage data from the LUMA PR website using Playwright
-    """
-    async with async_playwright() as p:
-        # Launch browser in headless mode
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-        
-        try:
-            # Navigate to the page
-            await page.goto('https://miluma.lumapr.com/outages/status', 
-                          wait_until='networkidle')
-            
-            # Wait for the table container to load
-            await page.wait_for_selector('div.w-full.max-w-full.overflow-x-auto', timeout=30000)
-            
-            # Extract table data
-            table_data = await page.evaluate(r'''
-                () => {
-                    const container = document.querySelector('div.w-full.max-w-full.overflow-x-auto');
-                    if (!container) return null;
-                    
-                    // Get headers from the header row
-                    const headerRow = container.querySelector('.grid.grid-cols-8.w-full.text-darkGreen');
-                    const headers = [];
-                    if (headerRow) {
-                        const headerButtons = headerRow.querySelectorAll('button');
-                        headerButtons.forEach(button => {
-                            const headerText = button.querySelector('div').textContent.trim();
-                            headers.push(headerText);
-                        });
-                    }
-                    
-                    // Find the positions of the columns we want
-                    const totalCustomersIndex = headers.findIndex(h => h === 'Total customers');
-                    const outOfServiceIndex = headers.findIndex(h => h === 'Out of Service');
-                    const plannedUpgradesIndex = headers.findIndex(h => h === 'Planned Upgrades');
-                    
-                    // Get all data rows (skip the header row)
-                    const rows = [];
-                    const dataRows = container.querySelectorAll('.border-t.border-t-darkGray.grid.grid-cols-8');
-                    
-                    dataRows.forEach(row => {
-                        const cells = row.querySelectorAll('div.p-4');
-                        if (cells.length >= 8) {
-                            const regionName = cells[0].textContent.trim();
-                            
-                            // Skip the Totals row
-                            if (regionName !== 'Totals') {
-                                const rowData = {
-                                    Region: regionName,
-                                    'Total customers': cells[totalCustomersIndex].textContent.trim(),
-                                    'Out of Service': cells[outOfServiceIndex].textContent.trim(),
-                                    'Planned Upgrades': cells[plannedUpgradesIndex].textContent.trim()
-                                };
-                                rows.push(rowData);
-                            }
-                        }
-                    });
-                    
-                    // Find the "Last update:" timestamp
-                  let lastUpdate = null;
-                  const textElements = document.querySelectorAll('*');
-                  for (const element of textElements) {
-                      if (element.textContent && element.textContent.includes('Last update:')) {
-                          const text = element.textContent;
-                          const match = text.match(/Last update:\s*(.+)/);
-                          if (match && match[1]) {
-                              lastUpdate = match[1].trim();
-                              // Trim to include only up to the first AM or PM (case-insensitive)
-                              const timeMatch = lastUpdate.match(/.*?(AM|PM)/i);
-                              if (timeMatch) {
-                                  lastUpdate = timeMatch[0];
-                              }
-                              break;
-                          }
-                      }
-                  }
 
-                  return {
-                      data: rows,
-                      timestamp: new Date().toISOString(),
-                      last_update: lastUpdate
-                  };
-                }
-            ''')
-            
-            return table_data
-            
-        finally:
-            await browser.close()
-
-async def main():
-    """
-    Main function to run the scraper and save results
-    """
+def main():
     print(f"Starting scrape at {datetime.now()}")
-    
-    try:
-        data = await scrape_luma_outages()
-        
-        if data:
-            # Save to JSON file
-            filename = f"luma_outages_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            
-            print(f"Successfully scraped {len(data['data'])} regions")
-            print("Data preview:")
-            for region in data['data']:
-                print(f"  {region['Region']}: {region['Total customers']} customers, {region['Out of Service']} out of service, {region['Planned Upgrades']} planned upgrades")
-            print(f"Data saved to {filename}")
 
-            if is_newer_last_update(data["last_update"]):
-                print("Newer data found, saving to Supabase...")
-                # Save to Supabase
-                save_data_to_supabase(data)
-            else:
-                print("No new data to save to Supabase.")
-            
-            # Also save a latest.json for easy access
-            with open('latest.json', 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-                
+    try:
+        data = fetch_outage_data()
+
+        print(f"Successfully fetched {len(data['regions'])} regions")
+        print("Data preview:")
+        for region in data["regions"]:
+            print(f"  {region['name']}: {region['totalClients']} customers, "
+                  f"{region['totalClientsWithoutService']} out of service ({region['percentageClientsWithoutService']}%), "
+                  f"{region['totalClientsWithService']} with service ({region['percentageClientsWithService']}%), "
+                  f"{region['totalClientsAffectedByPlannedOutage']} planned, "
+                  f"{region['totalClientsAffectedByLoadShed']} load shed")
+        totals = data["totals"]
+        print(f"  TOTAL: {totals['totalClients']} customers, "
+              f"{totals['totalClientsWithoutService']} out of service ({totals['totalPercentageWithoutService']}%), "
+              f"{totals['totalClientsWithService']} with service ({totals['totalPercentageWithService']}%), "
+              f"{totals['totalClientsAffectedByPlannedOutage']} planned, "
+              f"{totals['totalClientsAffectedByLoadShed']} load shed")
+        print(f"Last update: {data['timestamp']}")
+
+        # Save to latest.json for easy access
+        with open('latest.json', 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        print("Data saved to latest.json")
+
+        if is_newer_last_update(data["timestamp"]):
+            print("Newer data found, saving to Supabase...")
+            save_data_to_supabase(data)
         else:
-            print("No data found")
-            
-    except Exception as e:
-        print(f"Error during scraping: {str(e)}")
-        
-        # Check if it's a timeout error and if we have recent data in DB
-        from playwright._impl._errors import TimeoutError as PlaywrightTimeoutError
-        
-        if isinstance(e, PlaywrightTimeoutError):
-            print("⏱️ Scraping timed out. Checking database for recent data...")
-            if has_recent_data_in_db(minutes=MAX_DATA_AGE_MINUTES):
-                print("✅ Recent data found in database. Skipping error (site may be temporarily unavailable).")
-                sys.exit(0)  # Exit successfully without raising
-            else:
-                print("❌ No recent data in database. This is a real failure.")
-                raise  # Re-raise the error if no recent data
+            print("No new data to save to Supabase.")
+
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+        print(f"⏱️ Request timed out or connection error: {str(e)}")
+        print("Checking database for recent data...")
+        if has_recent_data_in_db(minutes=MAX_DATA_AGE_MINUTES):
+            print("✅ Recent data found in database. Skipping error (site may be temporarily unavailable).")
+            sys.exit(0)
         else:
-            # For other errors, raise as normal
+            print("❌ No recent data in database. This is a real failure.")
             raise
+    except Exception as e:
+        print(f"An error occurred:\n{e}")
+        raise
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

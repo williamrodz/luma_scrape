@@ -29,9 +29,6 @@ jobs:
       - name: Install dependencies
         run: uv sync --no-install-project
 
-      - name: Install Playwright Browsers
-        run: uv run --no-project python -m playwright install
-
       - name: Run scraper
         run: uv run --no-project python scrape_outage_status.py
 

@@ -1,48 +1,84 @@
 {
-  "data": [
+  "regions": [
     {
-      "Region": "Arecibo",
-      "Total customers": "177,369",
-      "Out of Service": "2,134",
-      "Planned Upgrades": "0"
+      "name": "Arecibo",
+      "totalClients": 177369,
+      "totalClientsWithoutService": 26,
+      "totalClientsWithService": 177343,
+      "totalClientsAffectedByPlannedOutage": 0,
+      "totalClientsAffectedByLoadShed": 0,
+      "percentageClientsWithoutService": 0.01,
+      "percentageClientsWithService": 99.99
     },
     {
-      "Region": "Bayamon",
-      "Total customers": "216,496",
-      "Out of Service": "3,898",
-      "Planned Upgrades": "0"
+      "name": "Bayamon",
+      "totalClients": 216496,
+      "totalClientsWithoutService": 22,
+      "totalClientsWithService": 216474,
+      "totalClientsAffectedByPlannedOutage": 0,
+      "totalClientsAffectedByLoadShed": 0,
+      "percentageClientsWithoutService": 0.01,
+      "percentageClientsWithService": 99.99
     },
     {
-      "Region": "Caguas",
-      "Total customers": "250,514",
-      "Out of Service": "13,631",
-      "Planned Upgrades": "0"
+      "name": "Carolina",
+      "totalClients": 141663,
+      "totalClientsWithoutService": 136,
+      "totalClientsWithService": 141527,
+      "totalClientsAffectedByPlannedOutage": 0,
+      "totalClientsAffectedByLoadShed": 0,
+      "percentageClientsWithoutService": 0.1,
+      "percentageClientsWithService": 99.9
     },
     {
-      "Region": "Carolina",
-      "Total customers": "141,663",
-      "Out of Service": "3",
-      "Planned Upgrades": "0"
+      "name": "Caguas",
+      "totalClients": 250514,
+      "totalClientsWithoutService": 8,
+      "totalClientsWithService": 250506,
+      "totalClientsAffectedByPlannedOutage": 0,
+      "totalClientsAffectedByLoadShed": 0,
+      "percentageClientsWithoutService": 0.0,
+      "percentageClientsWithService": 100.0
     },
     {
-      "Region": "Mayaguez",
-      "Total customers": "216,605",
-      "Out of Service": "734",
-      "Planned Upgrades": "0"
+      "name": "Mayaguez",
+      "totalClients": 216605,
+      "totalClientsWithoutService": 1983,
+      "totalClientsWithService": 214622,
+      "totalClientsAffectedByPlannedOutage": 0,
+      "totalClientsAffectedByLoadShed": 0,
+      "percentageClientsWithoutService": 0.92,
+      "percentageClientsWithService": 99.08
     },
     {
-      "Region": "Ponce",
-      "Total customers": "212,508",
-      "Out of Service": "6,558",
-      "Planned Upgrades": "0"
+      "name": "Ponce",
+      "totalClients": 212508,
+      "totalClientsWithoutService": 1,
+      "totalClientsWithService": 212507,
+      "totalClientsAffectedByPlannedOutage": 0,
+      "totalClientsAffectedByLoadShed": 0,
+      "percentageClientsWithoutService": 0.0,
+      "percentageClientsWithService": 100.0
     },
     {
-      "Region": "San Juan",
-      "Total customers": "253,068",
-      "Out of Service": "822",
-      "Planned Upgrades": "0"
+      "name": "San Juan",
+      "totalClients": 253068,
+      "totalClientsWithoutService": 10,
+      "totalClientsWithService": 253058,
+      "totalClientsAffectedByPlannedOutage": 1,
+      "totalClientsAffectedByLoadShed": 0,
+      "percentageClientsWithoutService": 0.0,
+      "percentageClientsWithService": 100.0
     }
   ],
-  "timestamp": "2025-05-14T03:27:15.545Z",
-  "last_update": "05/13/2025 11:25 PM"
+  "totals": {
+    "totalClientsWithoutService": 2186,
+    "totalClientsAffectedByLoadShed": 0,
+    "totalClients": 1468223,
+    "totalClientsWithService": 1466037,
+    "totalPercentageWithoutService": 0.15,
+    "totalClientsAffectedByPlannedOutage": 1,
+    "totalPercentageWithService": 99.85
+  },
+  "timestamp": "02/27/2026 06:20 PM"
 }
