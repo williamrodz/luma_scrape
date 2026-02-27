@@ -1,7 +1,7 @@
 # For scraping using BeautifulSoup and requests 
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pytz
 import sys
 from typing import Any, Dict, Optional
@@ -55,27 +55,27 @@ def has_recent_data_in_db(minutes: int = MAX_DATA_AGE_MINUTES) -> bool:
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
         
         # Calculate the cutoff time (now minus N minutes)
-        cutoff_time = datetime.utcnow() - timedelta(minutes=minutes)
-        
+        now = datetime.now(timezone.utc)
+        cutoff_time = now - timedelta(minutes=minutes)
+
         # Query the latest row
         response = supabase.table("luma_scrape_results").select("timestamp").order("timestamp", desc=True).limit(1).execute()
-        
+
         if response.data and len(response.data) > 0:
             latest_timestamp_str = response.data[0]["timestamp"]
-            # Parse the ISO timestamp from the database
+            # Parse the ISO timestamp from the database as timezone-aware UTC
             latest_timestamp = datetime.fromisoformat(latest_timestamp_str.replace('Z', '+00:00'))
-            # Convert to UTC naive for comparison
-            if latest_timestamp.tzinfo:
-                latest_timestamp = latest_timestamp.replace(tzinfo=None)
-            
+            if not latest_timestamp.tzinfo:
+                latest_timestamp = latest_timestamp.replace(tzinfo=timezone.utc)
+
             print(f"Latest data in DB: {latest_timestamp}")
             print(f"Cutoff time (now - {minutes} min): {cutoff_time}")
-            
+
             if latest_timestamp >= cutoff_time:
                 print(f"✅ Found recent data in DB (within last {minutes} minutes)")
                 return True
             else:
-                age_minutes = (datetime.utcnow() - latest_timestamp).total_seconds() / 60
+                age_minutes = (now - latest_timestamp).total_seconds() / 60
                 print(f"⚠️ Latest data in DB is older than {minutes} minutes (actual age: {age_minutes:.1f} minutes)")
                 return False
         else:
