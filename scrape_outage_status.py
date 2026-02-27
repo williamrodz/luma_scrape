@@ -21,6 +21,8 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 SUPABASE_CONFIGURED = bool(SUPABASE_URL and SUPABASE_KEY)
 
+MAX_DATA_AGE_MINUTES = 30
+
 def save_data_to_supabase(data: Dict[str, Any]):
     """
     Converts scraped outage data to a flat one-row dict and inserts into Supabase.
@@ -82,7 +84,7 @@ def is_newer_last_update(scraped_last_update: str) -> bool:
     else:
         return True  # table is empty
 
-def has_recent_data_in_db(minutes: int = 15) -> bool:
+def has_recent_data_in_db(minutes: int = MAX_DATA_AGE_MINUTES) -> bool:
     """
     Checks if there's data in the database from within the last N minutes.
     Returns True if recent data exists, False otherwise.
@@ -115,7 +117,8 @@ def has_recent_data_in_db(minutes: int = 15) -> bool:
                 print(f"✅ Found recent data in DB (within last {minutes} minutes)")
                 return True
             else:
-                print(f"⚠️ Latest data in DB is older than {minutes} minutes")
+                age_minutes = (datetime.utcnow() - latest_timestamp).total_seconds() / 60
+                print(f"⚠️ Latest data in DB is older than {minutes} minutes (actual age: {age_minutes:.1f} minutes)")
                 return False
         else:
             print("⚠️ No data found in database")
@@ -260,7 +263,7 @@ async def main():
         
         if isinstance(e, PlaywrightTimeoutError):
             print("⏱️ Scraping timed out. Checking database for recent data...")
-            if has_recent_data_in_db(minutes=15):
+            if has_recent_data_in_db(minutes=MAX_DATA_AGE_MINUTES):
                 print("✅ Recent data found in database. Skipping error (site may be temporarily unavailable).")
                 sys.exit(0)  # Exit successfully without raising
             else:

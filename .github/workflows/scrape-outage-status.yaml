@@ -1,4 +1,4 @@
-name: Scrape Service Status/ Outage Data
+name: Scrape Outage Status
 
 on:
   schedule:
@@ -33,7 +33,7 @@ jobs:
         run: uv run --no-project python -m playwright install
 
       - name: Run scraper
-        run: uv run --no-project python scrape_service_status.py
+        run: uv run --no-project python scrape_outage_status.py
 
       - name: Show timestamp
         run: echo "Scraped at $(date -u)"
