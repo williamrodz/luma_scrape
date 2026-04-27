@@ -1,6 +1,4 @@
-# For scraping using BeautifulSoup and requests 
-import requests
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from datetime import datetime, timedelta, timezone
 import pytz
 import sys
@@ -20,17 +18,6 @@ except ImportError:
 MAX_DATA_AGE_MINUTES = 30
 
 URL = "https://lumapr.com/system-overview/?lang=en"
-DEFAULT_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-}
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -55,10 +42,10 @@ def has_recent_data_in_db(minutes: int = MAX_DATA_AGE_MINUTES) -> bool:
     if not SUPABASE_CONFIGURED:
         print("Supabase credentials not configured; cannot check for recent data.")
         return False
-    
+
     try:
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        
+
         # Calculate the cutoff time (now minus N minutes)
         now = datetime.now(timezone.utc)
         cutoff_time = now - timedelta(minutes=minutes)
@@ -91,15 +78,8 @@ def has_recent_data_in_db(minutes: int = MAX_DATA_AGE_MINUTES) -> bool:
         return False  # If we can't check, assume no recent data (safer to fail)
 
 
-def scrape_luma(timeout_seconds: int = 20) -> Dict[str, Any]:
-    """Scrape LUMA system overview metrics and return a structured result dict."""
-    with requests.Session() as session:
-        response = session.get(URL, headers=DEFAULT_HEADERS, timeout=timeout_seconds)
-        response.raise_for_status()
-
-    soup = BeautifulSoup(response.text, 'html.parser')
-
-    # Define the IDs and their corresponding result keys
+def scrape_luma(timeout_seconds: int = 30) -> Dict[str, Any]:
+    """Scrape LUMA system overview metrics using a headless browser."""
     target_ids = {
         "total-Generation": "current_demand",
         "next-Hour-Forecast": "next_hour_demand_forecast",
@@ -108,36 +88,40 @@ def scrape_luma(timeout_seconds: int = 20) -> Dict[str, Any]:
 
     results: Dict[str, Any] = {}
 
-    for div_id, key in target_ids.items():
-        div = soup.find("div", id=div_id)
-        if div:
-            # Current value from data-value
-            current = _safe_parse_int(div.get("data-value")) if div.has_attr('data-value') else None
-            # Max value from span.max-text
-            max_span = div.find("span", class_="max-text")
-            max_val = _safe_parse_int(max_span.get_text(strip=True)) if max_span else None
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.goto(URL, timeout=timeout_seconds * 1000, wait_until="domcontentloaded")
 
-            results[key] = current
-            results[f"{key}_max"] = max_val
-        else:
-            results[key] = None
-            results[f"{key}_max"] = None
+            for div_id, key in target_ids.items():
+                element = page.query_selector(f"#{div_id}")
+                if element:
+                    data_value = element.get_attribute("data-value")
+                    current = _safe_parse_int(data_value)
+                    max_span = element.query_selector("span.max-text")
+                    max_val = _safe_parse_int(max_span.inner_text()) if max_span else None
+                    results[key] = current
+                    results[f"{key}_max"] = max_val
+                else:
+                    results[key] = None
+                    results[f"{key}_max"] = None
 
-    # Extract peak demand and peak reserve from the "peak-Forecast" section
-    peak_div = soup.find("div", id="peak-Forecast")
-    if peak_div:
-        peak_values = peak_div.find_all("p", class_="peak-text")
-        if len(peak_values) >= 2:
-            results["peak_demand_forecast"] = _safe_parse_int(peak_values[0].get_text(strip=True))
-            results["peak_reserve_forecast"] = _safe_parse_int(peak_values[1].get_text(strip=True))
-        else:
-            results["peak_demand_forecast"] = None
-            results["peak_reserve_forecast"] = None
-    else:
-        results["peak_demand_forecast"] = None
-        results["peak_reserve_forecast"] = None
+            peak_div = page.query_selector("#peak-Forecast")
+            if peak_div:
+                peak_values = peak_div.query_selector_all("p.peak-text")
+                if len(peak_values) >= 2:
+                    results["peak_demand_forecast"] = _safe_parse_int(peak_values[0].inner_text())
+                    results["peak_reserve_forecast"] = _safe_parse_int(peak_values[1].inner_text())
+                else:
+                    results["peak_demand_forecast"] = None
+                    results["peak_reserve_forecast"] = None
+            else:
+                results["peak_demand_forecast"] = None
+                results["peak_reserve_forecast"] = None
+        finally:
+            browser.close()
 
-    # Add timestamp
     puerto_rico_tz = pytz.timezone("America/Puerto_Rico")
     results["timestamp"] = datetime.now(puerto_rico_tz).isoformat()
     return results
@@ -174,8 +158,8 @@ if __name__ == "__main__":
             print(publishing_response)
         print()
 
-    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-        print(f"⏱️ Request timed out or connection error: {str(e)}")
+    except PlaywrightTimeoutError as e:
+        print(f"⏱️ Browser navigation timed out: {str(e)}")
         print("Checking database for recent data...")
         if has_recent_data_in_db(minutes=MAX_DATA_AGE_MINUTES):
             print("✅ Recent data found in database. Skipping error (site may be temporarily unavailable).")
