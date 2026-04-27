@@ -27,7 +27,7 @@ jobs:
         run: uv sync --no-install-project
 
       - name: Install Playwright browsers
-        run: uv run playwright install chromium --with-deps
+        run: uv run playwright install chromium
       - name: Debug Environment
         run: |
           echo "Checking environment variables (values hidden)"
