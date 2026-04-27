@@ -142,11 +142,21 @@ def scrape_luma(timeout_seconds: int = 20) -> Dict[str, Any]:
     results["timestamp"] = datetime.now(puerto_rico_tz).isoformat()
     return results
 
+NUMERIC_FIELDS = [
+    "current_demand", "current_demand_max",
+    "next_hour_demand_forecast", "next_hour_demand_forecast_max",
+    "current_reserve", "current_reserve_max",
+    "peak_demand_forecast", "peak_reserve_forecast",
+]
+
 def publish_results_to_db(results: Dict[str, Any]):
     """Publish results to Supabase if credentials are configured."""
     if not SUPABASE_CONFIGURED:
         print("Supabase credentials not configured; skipping publish.")
         return None
+
+    if all(results.get(f) is None for f in NUMERIC_FIELDS):
+        raise ValueError("All numeric fields are None — scraped data is invalid. Rejecting DB insert.")
 
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
     response = supabase.table("luma_scrape_results").insert(results).execute()
