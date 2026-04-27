@@ -7,7 +7,9 @@ A pair of scheduled scrapers that collect electricity grid and outage data from 
 ## Scripts
 
 ### `scrape_luma_grid_status.py`
-Scrapes the [LUMA System Overview](https://lumapr.com/system-overview/?lang=en) page using `requests` + BeautifulSoup. Captures island-wide generation, demand, and reserve metrics and stores them in the `luma_scrape_results` table.
+Scrapes the [LUMA System Overview](https://lumapr.com/system-overview/?lang=en) page using Playwright (headless Chromium). Captures island-wide generation, demand, and reserve metrics and stores them in the `luma_scrape_results` table.
+
+> **Note:** This scraper was originally `requests` + BeautifulSoup-based. Between **2026-04-20 20:50 UTC** and **2026-04-27 16:15 UTC**, bot detection on the LUMA server caused the scraper to receive stripped HTML, resulting in all numeric fields being written as `NULL`. It was rewritten on 2026-04-27 to use a headless Chromium browser via Playwright, which bypasses the bot detection and retrieves fully-rendered HTML.
 
 ### `scrape_outage_status.py`
 Fetches per-region outage data directly from the MiLUMA JSON API (`GET https://api.miluma.lumapr.com/miluma-outage-api/outage/regionsWithoutService`). Stores results in the `outage_snapshot` table. No browser required — the API is publicly accessible without authentication.
