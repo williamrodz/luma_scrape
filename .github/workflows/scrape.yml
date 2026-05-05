@@ -39,3 +39,10 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
           uv run --no-project python scrape_luma_grid_status.py
+
+      - name: Align scrape results
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          uv run --no-project python align_scrape_results.py

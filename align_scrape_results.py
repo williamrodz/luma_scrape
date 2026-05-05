@@ -287,13 +287,14 @@ def main() -> None:
     for i in range(0, len(insert_rows), BATCH_SIZE):
         batch = insert_rows[i : i + BATCH_SIZE]
         # ignore_duplicates=True → INSERT … ON CONFLICT DO NOTHING
-        supabase.table("prgriddata").upsert(
+        resp = supabase.table("prgriddata").upsert(
             batch,
             ignore_duplicates=True,
         ).execute()
-        inserted += len(batch)
+        inserted += len(resp.data)
 
-    print(f"Upserted {inserted} row(s) into prgriddata (existing slots skipped).")
+    skipped = len(insert_rows) - inserted
+    print(f"Inserted {inserted} new row(s) into prgriddata ({skipped} existing slot(s) skipped).")
 
 
 if __name__ == "__main__":
