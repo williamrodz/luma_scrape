@@ -32,6 +32,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+import holidays as hdays
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -106,6 +107,28 @@ def slot_distance(ts: datetime, slot_utc: datetime) -> timedelta:
 def to_pr(slot_utc: datetime) -> datetime:
     """Convert a UTC slot boundary to America/Puerto_Rico local time."""
     return slot_utc.astimezone(PR_TZ)
+
+
+def compute_date_fields(slot_utc: datetime, pr_holidays) -> dict:
+    """
+    Derive calendar fields from a UTC slot boundary, expressed in PR local time.
+
+    day_of_week follows the SQL/PostgreSQL convention: 0=Sunday … 6=Saturday.
+    is_weekend_holiday is True for Saturday, Sunday, or any PR+US federal holiday.
+    """
+    slot_pr = slot_utc.astimezone(PR_TZ)
+    # Python weekday(): Mon=0 … Sun=6  →  SQL DOW: Sun=0 … Sat=6
+    dow_sql = (slot_pr.weekday() + 1) % 7
+    is_wknd = dow_sql in (0, 6)                  # Sunday=0, Saturday=6
+    is_hday = slot_pr.date() in pr_holidays
+    return {
+        "hour":               slot_pr.hour,
+        "minute":             slot_pr.minute,
+        "day_of_week":        dow_sql,
+        "month":              slot_pr.month,
+        "day_of_month":       slot_pr.day,
+        "is_weekend_holiday": is_wknd or is_hday,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +231,7 @@ def compute_assignments(rows: list[dict]) -> dict[datetime, dict]:
 def build_insert_rows(
     assignments: dict[datetime, dict],
     aligned_at: datetime,
+    pr_holidays,
 ) -> list[dict]:
     """Convert slot-assignment dict to a list of prgriddata insert dicts."""
     insert_rows = []
@@ -224,8 +248,48 @@ def build_insert_rows(
             "peak_demand_forecast":          item.get("peak_demand_forecast"),
             "peak_reserve_forecast":         item.get("peak_reserve_forecast"),
             "aligned_at":                    aligned_at.isoformat(),
+            **compute_date_fields(slot_utc, pr_holidays),
         })
     return insert_rows
+
+
+def backfill_holiday_flag(supabase: Client, pr_holidays) -> None:
+    """
+    Update existing prgriddata rows where is_weekend_holiday is NULL.
+    Fetches slot_timestamp values in pages and updates in batches.
+    """
+    print("Backfilling is_weekend_holiday for existing rows...")
+    offset = 0
+    total_updated = 0
+
+    while True:
+        resp = (
+            supabase.table("prgriddata")
+            .select("slot_timestamp")
+            .is_("is_weekend_holiday", "null")
+            .order("slot_timestamp", desc=False)
+            .range(offset, offset + PAGE_SIZE - 1)
+            .execute()
+        )
+        page = resp.data or []
+        if not page:
+            break
+
+        for row in page:
+            slot_utc = datetime.fromisoformat(row["slot_timestamp"])
+            fields   = compute_date_fields(slot_utc, pr_holidays)
+            supabase.table("prgriddata").update(
+                fields
+            ).eq("slot_timestamp", row["slot_timestamp"]).execute()
+
+        total_updated += len(page)
+        print(f"  Updated {total_updated} row(s)...")
+
+        if len(page) < PAGE_SIZE:
+            break
+        offset += PAGE_SIZE
+
+    print(f"Backfill complete. Updated {total_updated} row(s).")
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +305,16 @@ def main() -> None:
         sys.exit(1)
 
     supabase: Client = create_client(url, key)
+
+    # Build holiday calendar covering history + next year.
+    years      = range(2024, datetime.now(tz=timezone.utc).year + 2)
+    pr_holidays = hdays.country_holidays("PR", years=years)
+
+    # ------------------------------------------------------------------
+    # Optional backfill: python align_scrape_results.py --backfill
+    # ------------------------------------------------------------------
+    if "--backfill" in sys.argv:
+        backfill_holiday_flag(supabase, pr_holidays)
 
     # ------------------------------------------------------------------
     # 1. Determine the query window
@@ -281,7 +355,7 @@ def main() -> None:
     # 4. Build insert rows and upsert (ignore slots that already exist)
     # ------------------------------------------------------------------
     now_utc     = datetime.now(tz=timezone.utc)
-    insert_rows = build_insert_rows(assignments, aligned_at=now_utc)
+    insert_rows = build_insert_rows(assignments, aligned_at=now_utc, pr_holidays=pr_holidays)
 
     inserted = 0
     for i in range(0, len(insert_rows), BATCH_SIZE):

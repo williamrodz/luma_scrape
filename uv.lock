@@ -337,6 +337,18 @@ wheels = [
 ]
 
 [[package]]
+name = "holidays"
+version = "0.96"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3e/dd/068cb4636a3cb433251e7d018d145f1a8c3c57c6fb0452d022561a35c46a/holidays-0.96.tar.gz", hash = "sha256:9d4d15bc28fa690969b82f07a1d6571aa14d4073cc98802510c08dfe3b1f2d25", size = 906699, upload-time = "2026-05-04T17:37:21.258Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/a2/05cbe4e2309a08a09bbfab04d3d37d687b5852abf7d037fea19313d2eb60/holidays-0.96-py3-none-any.whl", hash = "sha256:9d4f06603090304584f685b2f3d9f4289eb5c52b83fca472f922cb83cc3fb93f", size = 1473213, upload-time = "2026-05-04T17:37:18.933Z" },
+]
+
+[[package]]
 name = "hpack"
 version = "4.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -422,6 +434,7 @@ dependencies = [
     { name = "greenlet" },
     { name = "h11" },
     { name = "h2" },
+    { name = "holidays" },
     { name = "hpack" },
     { name = "httpcore" },
     { name = "httpx" },
@@ -485,6 +498,7 @@ requires-dist = [
     { name = "greenlet", specifier = "==3.2.2" },
     { name = "h11", specifier = "==0.16.0" },
     { name = "h2", specifier = "==4.2.0" },
+    { name = "holidays", specifier = ">=0.96" },
     { name = "hpack", specifier = "==4.1.0" },
     { name = "httpcore", specifier = "==1.0.9" },
     { name = "httpx", specifier = "==0.28.1" },

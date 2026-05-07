@@ -64,6 +64,7 @@ dependencies = [
     "websockets==14.2",
     "wsproto==1.2.0",
     "yarl==1.20.0",
+    "holidays>=0.96",
 ]
 
 # No build-system needed - this is a script-based project, not a package
