@@ -255,11 +255,11 @@ def build_insert_rows(
 
 def backfill_holiday_flag(supabase: Client, pr_holidays) -> None:
     """
-    Update existing prgriddata rows where is_weekend_holiday is NULL.
-    Fetches slot_timestamp values in pages and updates in batches.
+    Update existing prgriddata rows where date feature columns are NULL.
+    Always fetches from offset 0 — rows drop out of the filter after being
+    updated, so the remaining nulls are always at the top of the result set.
     """
-    print("Backfilling is_weekend_holiday for existing rows...")
-    offset = 0
+    print("Backfilling date feature columns for existing rows...")
     total_updated = 0
 
     while True:
@@ -268,7 +268,7 @@ def backfill_holiday_flag(supabase: Client, pr_holidays) -> None:
             .select("slot_timestamp")
             .is_("is_weekend_holiday", "null")
             .order("slot_timestamp", desc=False)
-            .range(offset, offset + PAGE_SIZE - 1)
+            .range(0, PAGE_SIZE - 1)
             .execute()
         )
         page = resp.data or []
@@ -284,10 +284,6 @@ def backfill_holiday_flag(supabase: Client, pr_holidays) -> None:
 
         total_updated += len(page)
         print(f"  Updated {total_updated} row(s)...")
-
-        if len(page) < PAGE_SIZE:
-            break
-        offset += PAGE_SIZE
 
     print(f"Backfill complete. Updated {total_updated} row(s).")
 

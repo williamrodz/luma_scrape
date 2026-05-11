@@ -2,9 +2,11 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 from datetime import datetime, timedelta, timezone
 import pytz
 import sys
+import time
 from typing import Any, Dict, Optional
 # For publishing to the database using Supabase
 from supabase import create_client, Client
+from postgrest.exceptions import APIError
 import os
 
 # Only try to load .env if running locally
@@ -143,8 +145,21 @@ def publish_results_to_db(results: Dict[str, Any]):
         raise ValueError("All numeric fields are None — scraped data is invalid. Rejecting DB insert.")
 
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    response = supabase.table("luma_scrape_results").insert(results).execute()
-    return response
+
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = supabase.table("luma_scrape_results").insert(results).execute()
+            return response
+        except APIError as e:
+            code = str(e.code) if hasattr(e, 'code') else ""
+            is_transient = code in ("522", "521", "523", "503", "502", "500")
+            if is_transient and attempt < max_attempts:
+                wait = 2 ** attempt  # 2s, 4s
+                print(f"Supabase transient error (code {code}), retrying in {wait}s (attempt {attempt}/{max_attempts})...")
+                time.sleep(wait)
+            else:
+                raise
 
 if __name__ == "__main__":
     # Run the scraper and publish results to the database
@@ -167,6 +182,15 @@ if __name__ == "__main__":
         else:
             print("❌ No recent data in database. This is a real failure.")
             raise  # Re-raise the error if no recent data
+    except APIError as e:
+        print(f"Supabase API error after retries:\n{e}")
+        print("Checking database for recent data...")
+        if has_recent_data_in_db(minutes=MAX_DATA_AGE_MINUTES):
+            print("✅ Recent data found. Treating Supabase outage as non-fatal.")
+            sys.exit(0)
+        else:
+            print("❌ No recent data. Supabase outage is a real failure.")
+            raise
     except Exception as e:
         print(f"An error occurred:\n{e}")
         raise  # Re-raise all other errors
