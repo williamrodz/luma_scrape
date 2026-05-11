@@ -6,6 +6,7 @@ from typing import Dict, Any
 from supabase import create_client, Client
 
 import os
+import s3_buffer
 
 # Only try to load .env if running locally
 # try:
@@ -37,20 +38,12 @@ def fetch_outage_data(timeout_seconds: int = 20) -> Dict[str, Any]:
     return response.json()
 
 
-def save_data_to_supabase(data: Dict[str, Any]):
-    """
-    Converts API outage data to a flat one-row dict and inserts into Supabase.
-    """
-    if not SUPABASE_CONFIGURED:
-        print("Supabase credentials not configured; skipping save.")
-        return
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
+def build_row(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Converts API outage data to a flat one-row dict."""
     row = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "last_update": data["timestamp"],
     }
-
     for region in data["regions"]:
         key_suffix = region["name"].lower().replace(" ", "_")
         row[f"total_customers_{key_suffix}"]        = region["totalClients"]
@@ -60,7 +53,6 @@ def save_data_to_supabase(data: Dict[str, Any]):
         row[f"load_shed_{key_suffix}"]              = region["totalClientsAffectedByLoadShed"]
         row[f"pct_without_service_{key_suffix}"]    = region["percentageClientsWithoutService"]
         row[f"pct_with_service_{key_suffix}"]       = region["percentageClientsWithService"]
-
     totals = data["totals"]
     row["totals_total_clients"]       = totals["totalClients"]
     row["totals_without_service"]     = totals["totalClientsWithoutService"]
@@ -69,13 +61,27 @@ def save_data_to_supabase(data: Dict[str, Any]):
     row["totals_load_shed"]           = totals["totalClientsAffectedByLoadShed"]
     row["totals_pct_without_service"] = totals["totalPercentageWithoutService"]
     row["totals_pct_with_service"]    = totals["totalPercentageWithService"]
+    return row
 
-    response = supabase.table("outage_snapshot").insert(row).execute()
 
-    if response:
-        print("✅ Supabase insert successful.")
-    else:
-        print("❌ Supabase insert error:", response["error"])
+def insert_row(row: Dict[str, Any]):
+    """Insert a pre-built row into Supabase. Raises on failure."""
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    supabase.table("outage_snapshot").insert(row).execute()
+    print("✅ Supabase insert successful.")
+
+
+def save_data_to_supabase(data: Dict[str, Any]):
+    """Converts API outage data and inserts into Supabase. Buffers to S3 on failure."""
+    if not SUPABASE_CONFIGURED:
+        print("Supabase credentials not configured; skipping save.")
+        return
+    row = build_row(data)
+    try:
+        insert_row(row)
+    except Exception as e:
+        print(f"Supabase insert failed: {e}")
+        s3_buffer.write_to_buffer("outage_snapshot", row)
 
 
 def is_newer_last_update(scraped_last_update: str) -> bool:
@@ -157,6 +163,7 @@ def has_recent_data_in_db(minutes: int = MAX_DATA_AGE_MINUTES) -> bool:
 
 
 def main():
+    s3_buffer.flush_buffer("outage_snapshot", insert_row)
     print(f"Starting scrape at {datetime.now()}")
 
     try:

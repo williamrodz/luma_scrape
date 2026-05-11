@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 from supabase import create_client, Client
 from postgrest.exceptions import APIError
 import os
+import s3_buffer
 
 # Only try to load .env if running locally
 try:
@@ -135,22 +136,14 @@ NUMERIC_FIELDS = [
     "peak_demand_forecast", "peak_reserve_forecast",
 ]
 
-def publish_results_to_db(results: Dict[str, Any]):
-    """Publish results to Supabase if credentials are configured."""
-    if not SUPABASE_CONFIGURED:
-        print("Supabase credentials not configured; skipping publish.")
-        return None
-
-    if all(results.get(f) is None for f in NUMERIC_FIELDS):
-        raise ValueError("All numeric fields are None — scraped data is invalid. Rejecting DB insert.")
-
+def insert_row(row: Dict[str, Any]):
+    """Insert a single row into Supabase. Raises on failure."""
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
-            response = supabase.table("luma_scrape_results").insert(results).execute()
-            return response
+            supabase.table("luma_scrape_results").insert(row).execute()
+            return
         except APIError as e:
             code = str(e.code) if hasattr(e, 'code') else ""
             is_transient = code in ("522", "521", "523", "503", "502", "500")
@@ -161,7 +154,24 @@ def publish_results_to_db(results: Dict[str, Any]):
             else:
                 raise
 
+
+def publish_results_to_db(results: Dict[str, Any]):
+    """Publish results to Supabase if credentials are configured. Buffers to S3 on failure."""
+    if not SUPABASE_CONFIGURED:
+        print("Supabase credentials not configured; skipping publish.")
+        return None
+
+    if all(results.get(f) is None for f in NUMERIC_FIELDS):
+        raise ValueError("All numeric fields are None — scraped data is invalid. Rejecting DB insert.")
+
+    try:
+        insert_row(results)
+    except Exception as e:
+        print(f"Supabase insert failed: {e}")
+        s3_buffer.write_to_buffer("luma_scrape_results", results)
+
 if __name__ == "__main__":
+    s3_buffer.flush_buffer("luma_scrape_results", insert_row)
     # Run the scraper and publish results to the database
     try:
         results = scrape_luma()
