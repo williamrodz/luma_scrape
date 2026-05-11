@@ -16,6 +16,8 @@ Fetches per-region outage data directly from the MiLUMA JSON API (`GET https://a
 
 > **Note:** This scraper was originally Playwright-based (scraping the DOM of `miluma.lumapr.com`). Around 2026-02-17 the site transitioned to a React SPA backed by a dedicated REST API, which caused the DOM scraper to time out. It was rewritten on 2026-02-27 to call the API directly.
 
+> **Note:** Between **2026-05-07 20:11 ET** and **2026-05-08 02:01 ET**, a Supabase service outage prevented scraped data from being saved to the database. Both scrapers were running normally during this window, but all write operations failed. No data from this period exists in either table.
+
 ---
 
 ## Setup

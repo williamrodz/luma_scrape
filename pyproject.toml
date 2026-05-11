@@ -65,6 +65,7 @@ dependencies = [
     "wsproto==1.2.0",
     "yarl==1.20.0",
     "holidays>=0.96",
+    "boto3>=1.43.6",
 ]
 
 # No build-system needed - this is a script-based project, not a package

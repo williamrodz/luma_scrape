@@ -3,9 +3,9 @@ from datetime import datetime, timedelta, timezone
 import pytz
 import sys
 from typing import Any, Dict, Optional
-# For publishing to the database using Supabase
 from supabase import create_client, Client
 import os
+import s3_buffer
 
 # Only try to load .env if running locally
 try:
@@ -133,6 +133,17 @@ NUMERIC_FIELDS = [
     "peak_demand_forecast", "peak_reserve_forecast",
 ]
 
+TABLE = "luma_scrape_results"
+
+
+def insert_row(row: Dict[str, Any]):
+    """Insert a pre-built row dict into Supabase. Raises on failure."""
+    if not SUPABASE_CONFIGURED:
+        raise RuntimeError("Supabase credentials not configured.")
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    supabase.table(TABLE).insert(row).execute()
+
+
 def publish_results_to_db(results: Dict[str, Any]):
     """Publish results to Supabase if credentials are configured."""
     if not SUPABASE_CONFIGURED:
@@ -142,31 +153,32 @@ def publish_results_to_db(results: Dict[str, Any]):
     if all(results.get(f) is None for f in NUMERIC_FIELDS):
         raise ValueError("All numeric fields are None — scraped data is invalid. Rejecting DB insert.")
 
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    response = supabase.table("luma_scrape_results").insert(results).execute()
+    response = insert_row(results)
     return response
 
 if __name__ == "__main__":
-    # Run the scraper and publish results to the database
+    s3_buffer.flush_buffer(TABLE, insert_row)
+
     try:
         results = scrape_luma()
         print("Scraping successful. Results:")
         print(results)
         print()
-        publishing_response = publish_results_to_db(results)
-        if publishing_response is not None:
-            print(publishing_response)
-        print()
+        try:
+            publish_results_to_db(results)
+        except Exception as e:
+            print(f"❌ Supabase insert failed: {e}")
+            s3_buffer.write_to_buffer(TABLE, results)
 
     except PlaywrightTimeoutError as e:
         print(f"⏱️ Browser navigation timed out: {str(e)}")
         print("Checking database for recent data...")
         if has_recent_data_in_db(minutes=MAX_DATA_AGE_MINUTES):
             print("✅ Recent data found in database. Skipping error (site may be temporarily unavailable).")
-            sys.exit(0)  # Exit successfully without raising
+            sys.exit(0)
         else:
             print("❌ No recent data in database. This is a real failure.")
-            raise  # Re-raise the error if no recent data
+            raise
     except Exception as e:
         print(f"An error occurred:\n{e}")
-        raise  # Re-raise all other errors
+        raise

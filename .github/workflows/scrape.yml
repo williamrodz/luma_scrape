@@ -37,6 +37,9 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_S3_BUFFER_BUCKET: ${{ secrets.AWS_S3_BUFFER_BUCKET }}
         run: |
           uv run --no-project python scrape_luma_grid_status.py
 
