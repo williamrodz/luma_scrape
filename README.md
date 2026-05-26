@@ -119,6 +119,14 @@ All endpoints are under `https://api.miluma.lumapr.com/`.
 
 ---
 
+## GitHub Actions
+
+Both workflows run every 5 minutes on a self-hosted runner (`ai-workstation`). They use only shell `run:` steps — no `uses:` action dependencies — so they have zero reliance on GitHub's action CDN (`codeload.github.com`). `uv` and Python 3.12 must be pre-installed on the runner machine.
+
+> **Incident 2026-05-26 08:25–08:45 ET:** Both workflows failed during "Setup job" because the runner could not download `actions/setup-python@v5` from `codeload.github.com`. The scraper never ran, causing a ~20-minute data gap. The S3 buffer did not activate because it only catches Supabase failures during a successful scrape run — it cannot compensate for a workflow that never starts. **Root cause:** transient network connectivity issue between the runner and GitHub's CDN. **Fix:** removed all `uses:` action steps (`actions/checkout@v4`, `actions/setup-python@v5`, `astral-sh/setup-uv@v5`) from both workflows and replaced `checkout` with a `git fetch + reset --hard` shell step, eliminating the dependency on `codeload.github.com` entirely.
+
+---
+
 ## Notes
 
 - The `uv.lock` file is committed to ensure reproducible builds.

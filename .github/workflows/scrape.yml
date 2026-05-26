@@ -13,6 +13,9 @@ jobs:
       - name: Update code
         run: git -C $GITHUB_WORKSPACE fetch origin main && git -C $GITHUB_WORKSPACE reset --hard origin/main
 
+      - name: Add uv to PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: Install dependencies
         run: uv sync --no-install-project
 
