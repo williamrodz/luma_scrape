@@ -10,18 +10,8 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'  # Using 3.12 for better GitHub Actions compatibility
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          version: "latest"
+      - name: Update code
+        run: git -C $GITHUB_WORKSPACE fetch origin main && git -C $GITHUB_WORKSPACE reset --hard origin/main
 
       - name: Install dependencies
         run: uv sync --no-install-project
