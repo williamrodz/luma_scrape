@@ -125,6 +125,32 @@ Both workflows run every 5 minutes on a self-hosted runner (`ai-workstation`). T
 
 > **Incident 2026-05-26 08:25–08:45 ET:** Both workflows failed during "Setup job" because the runner could not download `actions/setup-python@v5` from `codeload.github.com`. The scraper never ran, causing a ~20-minute data gap. The S3 buffer did not activate because it only catches Supabase failures during a successful scrape run — it cannot compensate for a workflow that never starts. **Root cause:** transient network connectivity issue between the runner and GitHub's CDN. **Fix:** removed all `uses:` action steps (`actions/checkout@v4`, `actions/setup-python@v5`, `astral-sh/setup-uv@v5`) from both workflows and replaced `checkout` with a `git fetch + reset --hard` shell step, eliminating the dependency on `codeload.github.com` entirely.
 
+> **Incident 2026-08-06 → 2026-10-23 (two gaps, ~75 days of missing data):** The self-hosted runner went offline around 2026-08-06, so no scrapes ran until 2026-09-27 (51 days). The biweekly backup jobs also never got a runner, so no bot commits landed after 2026-08-01, and GitHub disabled every scheduled workflow on 2026-09-30 under its 60-day inactivity rule for public repos (23 more days). The local cron dispatcher kept failing with `422 Cannot trigger a 'workflow_dispatch' on a disabled workflow`, and nothing alerted. **Fix:** re-enabled the workflows; the cron dispatcher now re-enables them daily through the API (no dummy commits); added local and GitHub-hosted email alerts (see [Monitoring](#monitoring)); enabled RLS on `outage_snapshot` and `outage_by_region` (`schema/enable_rls_2026_10_23.sql`). Data for the gaps cannot be backfilled — the MiLUMA API only returns the current state.
+
+---
+
+## Monitoring
+
+Scrapes are triggered and monitored from two places, so an outage is caught whether the workstation is up or down.
+
+**On the workstation (crontab).** Reference copies live in [`ops/`](ops/); the live files are in the home directory.
+
+| Cron | Script | Purpose |
+|---|---|---|
+| `*/5 * * * *` | `~/trigger-luma-scrape.sh` | Dispatches both scrape workflows. Once a day it also calls the GitHub "enable workflow" API for all workflows, which resets the 60-day inactivity timer. If a dispatch is refused because a workflow is disabled, it re-enables it and retries. Needs a PAT with `actions:write` in `~/.github_pat`. |
+| `2-59/5 * * * *` | `~/luma-alerts/check_alerts.py` | Emails an alert via [Resend](https://resend.com) when either table is >30 min stale, Supabase is unreachable, or a grid outage starts (≥5% of customers without service, or any load shed). One email when an alert starts and one when it clears; state in `~/luma-alerts/state.json`, config in `~/luma-alerts/.env` (see `ops/.env.example`). `--test` sends a test email; `--dry-run` sends nothing. |
+
+**On GitHub-hosted runners.** `.github/workflows/external-health-check.yml` runs `external_health_check.py` on `ubuntu-latest` every 30 minutes and alerts if either table is >45 min stale. It does not depend on the workstation. An open issue labelled `outage-alert` marks an ongoing incident: it is opened (with an email) when data goes stale and closed (with a "resolved" email) when data is fresh again. Each run re-enables the workflow so it can't be disabled for inactivity. Test the alert path with:
+
+```bash
+gh workflow run external-health-check.yml -R williamrodz/luma_scrape -f test_alert=true   # opens a test issue + email
+gh workflow run external-health-check.yml -R williamrodz/luma_scrape                      # closes it + "resolved" email
+```
+
+Secrets used: `SUPABASE_URL`, `SUPABASE_KEY` (service_role), `RESEND_API_KEY` (send-only), `ALERT_TO`.
+
+**Email domain.** Alerts are sent from `alerts@prgridstatus.com`. The Resend DNS records (DKIM TXT `resend._domainkey`, CNAMEs `rsend` and `send`, DMARC TXT `_dmarc`) live in the Route 53 zone for `prgridstatus.com`.
+
 ---
 
 ## Notes
