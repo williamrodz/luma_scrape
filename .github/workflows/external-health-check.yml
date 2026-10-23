@@ -1,0 +1,43 @@
+name: External Health Check
+
+# Runs on GitHub-hosted runners (not the self-hosted workstation) so it can
+# alert when the workstation itself is down.
+
+on:
+  schedule:
+    - cron: '17,47 * * * *'  # Every 30 minutes, off the top of the hour
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: 'Simulate stale data to test the alert email'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # Re-enabling resets GitHub's 60-day inactivity timer, so this check
+      # stays alive even if nothing else touches the repo.
+      - name: Keep this workflow enabled
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT repos/${{ github.repository }}/actions/workflows/external-health-check.yml/enable
+
+      - name: Check scraper freshness
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_TO: ${{ secrets.ALERT_TO }}
+          GITHUB_TOKEN: ${{ github.token }}
+          TEST_ALERT: ${{ inputs.test_alert }}
+        run: python3 external_health_check.py
