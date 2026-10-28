@@ -7,6 +7,7 @@ from supabase import create_client, Client
 
 import os
 import s3_buffer
+import outage_events
 
 # Only try to load .env if running locally
 # try:
@@ -82,6 +83,18 @@ def save_data_to_supabase(data: Dict[str, Any]):
     except Exception as e:
         print(f"Supabase insert failed: {e}")
         s3_buffer.write_to_buffer("outage_snapshot", row)
+        return
+    update_outage_events(row)
+
+
+def update_outage_events(row: Dict[str, Any]):
+    """Open/extend/resolve the grid outage event. Never fails the scrape."""
+    try:
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        action = outage_events.apply_to_supabase(supabase, row)
+        print(f"Outage event: {action or 'no change'}")
+    except Exception as e:
+        print(f"⚠️ Outage event update failed: {e}")
 
 
 def is_newer_last_update(scraped_last_update: str) -> bool:
