@@ -2,9 +2,9 @@
 One-time backfill of `outage_events` from historical `outage_snapshot` rows.
 
 Replays every snapshot in order through the same logic the scraper uses
-(outage_events.next_action). If a data gap longer than GAP_HOURS interrupts an
-open event, the event is closed at the last snapshot before the gap so a single
-event doesn't span e.g. the Aug–Oct 2026 runner outage.
+(outage_events.next_action), including the 30-min resolve grace and closing an
+event at the last snapshot before a data gap longer than 2 h (e.g. the Aug–Oct
+2026 runner outage).
 
 Usage (needs the service_role key in .env):
   uv run --no-project python backfill_outage_events.py --dry-run
@@ -12,7 +12,6 @@ Usage (needs the service_role key in .env):
 """
 import os
 import sys
-from datetime import datetime, timedelta
 
 from supabase import create_client
 
@@ -25,16 +24,11 @@ except ImportError:
     pass
 
 BATCH_SIZE = 1000
-GAP_HOURS = 2
 
 COLUMNS = ",".join(
     ["timestamp", "totals_pct_without_service", "totals_without_service", "totals_load_shed"]
     + [f"{col}_{r}" for r in oe.REGIONS for col in ("pct_without_service", "out_of_service", "total_customers")]
 )
-
-
-def parse_ts(s):
-    return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
 def fetch_snapshots(supabase):
@@ -57,16 +51,9 @@ def fetch_snapshots(supabase):
 
 def build_events(rows):
     """Return a list of event dicts (the last one may be open)."""
-    events, current, prev_ts = [], None, None
+    events, current = [], None
     for row in rows:
-        ts = parse_ts(row["timestamp"])
-        if current and prev_ts and ts - prev_ts > timedelta(hours=GAP_HOURS):
-            current["resolved_at"] = current["last_seen_at"]
-            events.append(current)
-            current = None
-        action = oe.next_action(current, row)
-        if action:
-            kind, fields = action
+        for kind, fields in oe.next_action(current, row):
             if kind == "insert":
                 current = fields
             else:
@@ -74,7 +61,6 @@ def build_events(rows):
                 if kind == "resolve":
                     events.append(current)
                     current = None
-        prev_ts = ts
     if current:
         events.append(current)
     return events
@@ -93,7 +79,7 @@ def main():
     events = build_events(fetch_snapshots(supabase))
     print(f"\n{len(events)} events:")
     for e in events:
-        end = e.get("resolved_at") or "ONGOING"
+        end = e["resolved_at"] or "ONGOING"
         print(f"  {e['started_at'][:16]} → {str(end)[:16]}  peak {e['peak_pct']}%  "
               f"out {e['peak_customers_out']:,}  shed {e['peak_load_shed']:,}  ({e['cause']})")
 

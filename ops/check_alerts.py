@@ -8,7 +8,9 @@ when it clears; state is kept in state.json next to this script.
 Alerts:
   - scraper_outage_snapshot / scraper_grid: no new rows for STALE_MINUTES
   - supabase_unreachable: the freshness queries failed
-  - grid_outage: island-wide % without service >= GRID_PCT_THRESHOLD, or any load shed
+  - grid_outage: an open row in outage_events (maintained by the outage scraper:
+    opens at >= 5% without service or any load shed, resolves after 30 min below).
+    Falls back to the raw threshold if outage_events can't be read.
 
 Usage:
   check_alerts.py           # normal run
@@ -108,12 +110,25 @@ def evaluate(now):
 
     pct = snap.get("totals_pct_without_service") or 0
     shed = snap.get("totals_load_shed") or 0
-    alerts["grid_outage"] = (
-        pct >= GRID_PCT_THRESHOLD or shed > 0,
+    detail = (
         f"LUMA update {snap['last_update']}: {snap['totals_without_service']:,} of "
         f"{snap['totals_total_clients']:,} customers without service ({pct}%), "
-        f"load shed: {shed:,}.",
+        f"load shed: {shed:,}."
     )
+    try:
+        latest = supabase_get("outage_events?select=*&order=started_at.desc&limit=1")
+    except Exception as e:
+        print(f"outage_events unreadable ({e}); using raw threshold")
+        alerts["grid_outage"] = (pct >= GRID_PCT_THRESHOLD or shed > 0, detail)
+        return alerts
+    event = latest[0] if latest else None
+    if event:
+        detail += (
+            f"\nEvent started {parse_ts(event['started_at']):%Y-%m-%d %H:%M} UTC, "
+            f"peak {event['peak_pct']}% ({event['peak_customers_out']:,} customers)"
+            + (f", resolved {parse_ts(event['resolved_at']):%Y-%m-%d %H:%M} UTC." if event["resolved_at"] else ".")
+        )
+    alerts["grid_outage"] = (bool(event) and event["resolved_at"] is None, detail)
     return alerts
 
 

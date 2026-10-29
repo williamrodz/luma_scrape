@@ -91,8 +91,8 @@ def update_outage_events(row: Dict[str, Any]):
     """Open/extend/resolve the grid outage event. Never fails the scrape."""
     try:
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        action = outage_events.apply_to_supabase(supabase, row)
-        print(f"Outage event: {action or 'no change'}")
+        actions = outage_events.apply_to_supabase(supabase, row)
+        print(f"Outage event: {', '.join(actions) or 'no change'}")
     except Exception as e:
         print(f"⚠️ Outage event update failed: {e}")
 

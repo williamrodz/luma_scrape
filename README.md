@@ -106,20 +106,24 @@ For the full schema change history see [`schema/OUTAGE_SNAPSHOT_CHANGES_2026_02_
 
 ## outage_events Schema
 
-`outage_events` holds one row per **grid outage event**, shown on prgridstatus.com/outage-map. An event opens when a new `outage_snapshot` row has island-wide `totals_pct_without_service >= 5` or any `totals_load_shed > 0`, which is the same rule as the `grid_outage` email alert. It resolves at the first snapshot where neither holds. `scrape_outage_status.py` maintains it after each successful insert, using [`outage_events.py`](outage_events.py), and a failure there never fails the scrape. At most one event is open at a time.
+`outage_events` holds one row per **grid outage event**, shown on prgridstatus.com/outage-map. An event opens at the first `outage_snapshot` row with island-wide `totals_pct_without_service >= 5` or any `totals_load_shed > 0`.
+- **Resolving:** it resolves only after staying under threshold for **30 minutes**, so a brief dip doesn't split one outage into two events. `resolved_at` is backdated to the first snapshot under threshold, which is when service actually recovered.
+- **Data gaps:** if snapshots stop for more than 2 h while an event is open, the event is closed at the last point seen.
+- **Emails:** the `grid_outage` email alert (`ops/check_alerts.py`) follows this table, so its emails match the website. `scrape_outage_status.py` maintains it after each successful insert, using [`outage_events.py`](outage_events.py), and a failure there never fails the scrape. At most one event is open at a time.
 
 | Column | Type | Description |
 |---|---|---|
 | `started_at` | `TIMESTAMPTZ` | First snapshot over threshold |
 | `resolved_at` | `TIMESTAMPTZ` | First snapshot back under threshold; `NULL` = ongoing |
 | `last_seen_at` | `TIMESTAMPTZ` | Latest snapshot evaluated while open |
+| `below_since` | `TIMESTAMPTZ` | First under-threshold snapshot while open ("Recovering"); `NULL` while over threshold |
 | `cause` | `TEXT` | `outage`, `load_shed`, or `outage+load_shed` (union over the event) |
 | `start_pct` / `current_pct` / `peak_pct` | `NUMERIC(5,2)` | Island-wide % without service |
 | `peak_customers_out` / `peak_load_shed` | `INTEGER` | Max customers out / load shed during the event |
 | `peak_at` | `TIMESTAMPTZ` | When `peak_pct` was reached |
 | `region_peak_pct` | `JSONB` | Max % without service per region, e.g. `{"ponce": 21.4, ...}` |
 
-DDL: [`schema/outage_events_2026_10_28.sql`](schema/outage_events_2026_10_28.sql). Rebuild from history with `backfill_outage_events.py` (`--dry-run` first; `--force` replaces existing rows). The backfill closes an event at the last snapshot before any data gap longer than 2 h.
+DDL: [`schema/outage_events_2026_10_28.sql`](schema/outage_events_2026_10_28.sql) plus [`schema/outage_events_below_since_2026_10_28.sql`](schema/outage_events_below_since_2026_10_28.sql). Rebuild from history with `backfill_outage_events.py` (`--dry-run` first; `--force` replaces existing rows). The backfill uses the same logic as the scraper.
 
 Both `outage_snapshot` and `outage_events` have an anon `SELECT` policy so the website can read them ([`schema/outage_snapshot_public_read_2026_10_28.sql`](schema/outage_snapshot_public_read_2026_10_28.sql)). Writes remain service_role only.
 

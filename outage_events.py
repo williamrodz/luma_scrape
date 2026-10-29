@@ -1,16 +1,22 @@
 """
 Grid outage event tracking for the `outage_events` table.
 
-An event opens when an outage_snapshot row crosses the grid-outage threshold
-(same rule as the `grid_outage` alert in ops/check_alerts.py) and resolves at
-the first snapshot that no longer does. At most one event is open at a time.
+An event opens at the first outage_snapshot row over the grid-outage threshold
+(>= 5% island-wide without service, or any load shed). It resolves once the
+grid has stayed under threshold for RESOLVE_AFTER_MIN, with resolved_at
+backdated to the first snapshot under threshold (`below_since`), so a brief dip
+doesn't split one outage into two events. A data gap longer than GAP_HOURS
+closes the open event at its last known point. At most one event is open.
 
 The functions here are pure (no I/O) so the scraper and the backfill script
 share exactly the same logic; `apply_to_supabase` does the writes.
 """
-from typing import Any, Dict, Optional, Tuple
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 
 GRID_PCT_THRESHOLD = 5.0
+RESOLVE_AFTER_MIN = 30
+GAP_HOURS = 2
 TABLE = "outage_events"
 REGIONS = ["arecibo", "bayamon", "carolina", "caguas", "mayaguez", "ponce", "san_juan"]
 
@@ -20,6 +26,10 @@ def _num(value) -> float:
         return float(value or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def parse_ts(s: str) -> datetime:
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
 def _pct(out, total) -> float:
@@ -75,6 +85,8 @@ def new_event(row: Dict[str, Any]) -> Dict[str, Any]:
     pct = _num(row.get("totals_pct_without_service"))
     return {
         "started_at": row["timestamp"],
+        "resolved_at": None,
+        "below_since": None,
         "last_seen_at": row["timestamp"],
         "cause": row_cause(row),
         "start_pct": pct,
@@ -92,6 +104,7 @@ def extend_event(event: Dict[str, Any], row: Dict[str, Any]) -> Dict[str, Any]:
     pct = _num(row.get("totals_pct_without_service"))
     changes = {
         "last_seen_at": row["timestamp"],
+        "below_since": None,
         "current_pct": pct,
         "cause": _merge_cause(event["cause"], row_cause(row)),
         "peak_customers_out": max(int(_num(event.get("peak_customers_out"))), int(_num(row.get("totals_without_service")))),
@@ -107,33 +120,50 @@ def extend_event(event: Dict[str, Any], row: Dict[str, Any]) -> Dict[str, Any]:
     return changes
 
 
-def next_action(open_event: Optional[Dict[str, Any]], row: Dict[str, Any]) -> Optional[Tuple[str, Dict[str, Any]]]:
+Action = Tuple[str, Dict[str, Any]]
+
+
+def next_action(open_event: Optional[Dict[str, Any]], row: Dict[str, Any]) -> List[Action]:
     """
-    Decide what a new snapshot does to the event log.
-    Returns ('insert', fields), ('update', fields), ('resolve', fields) or None.
+    Decide what a new snapshot does to the event log. Returns a list of
+    ('insert' | 'update' | 'resolve', fields), applied in order; empty if no change.
     """
     row = normalize(row)
     over = is_grid_outage(row)
+    ts = parse_ts(row["timestamp"])
+    actions: List[Action] = []
+
+    # A long data gap closes the open event where we last saw it, then the row is judged fresh
+    if open_event and ts - parse_ts(open_event["last_seen_at"]) > timedelta(hours=GAP_HOURS):
+        actions.append(("resolve", {"resolved_at": open_event.get("below_since") or open_event["last_seen_at"]}))
+        open_event = None
+
     if open_event is None:
-        return ("insert", new_event(row)) if over else None
+        if over:
+            actions.append(("insert", new_event(row)))
+        return actions
+
     if over:
-        return ("update", extend_event(open_event, row))
-    return ("resolve", {
-        "resolved_at": row["timestamp"],
-        "current_pct": _num(row.get("totals_pct_without_service")),
-    })
+        actions.append(("update", extend_event(open_event, row)))
+        return actions
+
+    pct = _num(row.get("totals_pct_without_service"))
+    below_since = open_event.get("below_since") or row["timestamp"]
+    if ts - parse_ts(below_since) >= timedelta(minutes=RESOLVE_AFTER_MIN):
+        actions.append(("resolve", {"resolved_at": below_since, "current_pct": pct, "last_seen_at": row["timestamp"]}))
+    else:
+        actions.append(("update", {"below_since": below_since, "current_pct": pct, "last_seen_at": row["timestamp"]}))
+    return actions
 
 
-def apply_to_supabase(supabase, row: Dict[str, Any]) -> Optional[str]:
-    """Fetch the open event (if any), apply `next_action`, return the action name."""
+def apply_to_supabase(supabase, row: Dict[str, Any]) -> List[str]:
+    """Fetch the open event (if any), apply `next_action`, return the action names."""
     resp = supabase.table(TABLE).select("*").is_("resolved_at", "null").limit(1).execute()
     open_event = resp.data[0] if resp.data else None
-    action = next_action(open_event, row)
-    if action is None:
-        return None
-    kind, fields = action
-    if kind == "insert":
-        supabase.table(TABLE).insert(fields).execute()
-    else:
-        supabase.table(TABLE).update(fields).eq("id", open_event["id"]).execute()
-    return kind
+    actions = next_action(open_event, row)
+    for kind, fields in actions:
+        if kind == "insert":
+            supabase.table(TABLE).insert(fields).execute()
+        else:
+            supabase.table(TABLE).update(fields).eq("id", open_event["id"]).execute()
+    return [kind for kind, _ in actions]
