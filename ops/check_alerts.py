@@ -2,8 +2,9 @@
 """
 Outage alerts for the LUMA scrapers, sent by email through Resend.
 
-Runs from cron every 5 minutes. Each alert emails once when it starts and once
-when it clears; state is kept in state.json next to this script.
+Runs from cron every 5 minutes, straight from a git checkout of this repo. Each
+alert emails once when it starts and once when it clears. Config (.env) and
+state.json live in ~/luma-alerts (override with LUMA_ALERTS_DIR).
 
 Alerts:
   - scraper_outage_snapshot / scraper_grid: no new rows for STALE_MINUTES
@@ -25,8 +26,10 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-STATE_FILE = HERE / "state.json"
+# Config (.env) and state.json live outside the repo so the script can run straight
+# from a git checkout that cron pulls; override with LUMA_ALERTS_DIR.
+CONFIG_DIR = Path(os.environ.get("LUMA_ALERTS_DIR", Path.home() / "luma-alerts")).expanduser()
+STATE_FILE = CONFIG_DIR / "state.json"
 
 STALE_MINUTES = 30
 GRID_PCT_THRESHOLD = 5.0
@@ -34,7 +37,7 @@ GRID_PCT_THRESHOLD = 5.0
 
 def load_env():
     env = {}
-    for line in (HERE / ".env").read_text().splitlines():
+    for line in (CONFIG_DIR / ".env").read_text().splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             k, v = line.split("=", 1)

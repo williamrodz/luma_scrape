@@ -158,12 +158,20 @@ Both workflows run every 5 minutes on a self-hosted runner (`ai-workstation`). T
 
 Scrapes are triggered and monitored from two places, so an outage is caught whether the workstation is up or down.
 
-**On the workstation (crontab).** Reference copies live in [`ops/`](ops/); the live files are in the home directory.
+**On the workstation (crontab).** Both scripts run straight from a dedicated clone of this repo at `~/luma_scrape`. The clone is separate from the self-hosted runner's workspace, and cron pulls it every 5 minutes, so pushing to `main` updates them. Secrets and state stay outside the repo.
 
-| Cron | Script | Purpose |
+| Cron | Command | Purpose |
 |---|---|---|
-| `*/5 * * * *` | `~/trigger-luma-scrape.sh` | Dispatches both scrape workflows. Once a day it also calls the GitHub "enable workflow" API for all workflows, which resets the 60-day inactivity timer. If a dispatch is refused because a workflow is disabled, it re-enables it and retries. Needs a PAT with `actions:write` in `~/.github_pat`. |
-| `2-59/5 * * * *` | `~/luma-alerts/check_alerts.py` | Emails an alert via [Resend](https://resend.com) when either table is >30 min stale, Supabase is unreachable, or a grid outage starts (≥5% of customers without service, or any load shed). One email when an alert starts and one when it clears; state in `~/luma-alerts/state.json`, config in `~/luma-alerts/.env` (see `ops/.env.example`). `--test` sends a test email; `--dry-run` sends nothing. |
+| `*/5 * * * *` | `git -C ~/luma_scrape pull -q --ff-only; ~/luma_scrape/ops/trigger-luma-scrape.sh >> ~/trigger-luma-scrape.log 2>&1` | Updates the clone, then dispatches both scrape workflows. Once a day it also calls the GitHub "enable workflow" API for all workflows, which resets the 60-day inactivity timer. If a dispatch is refused because a workflow is disabled, it re-enables it and retries. Needs a PAT with `actions:write` in `~/.github_pat`. |
+| `2-59/5 * * * *` | `python3 ~/luma_scrape/ops/check_alerts.py >> ~/luma-alerts/alerts.log 2>&1` | Emails an alert via [Resend](https://resend.com) when either table is >30 min stale, Supabase is unreachable, or a grid outage event is open in `outage_events`. One email when an alert starts and one when it clears. Config is in `~/luma-alerts/.env` (see `ops/.env.example`) and state in `~/luma-alerts/state.json`; override the folder with `LUMA_ALERTS_DIR`. `--test` sends a test email; `--dry-run` sends nothing. |
+
+One-time setup on the workstation, which keeps the existing `~/luma-alerts/.env` and `state.json`:
+
+```bash
+git clone https://github.com/williamrodz/luma_scrape.git ~/luma_scrape
+python3 ~/luma_scrape/ops/check_alerts.py --dry-run   # should print each alert, send nothing
+crontab -e   # point both entries at ~/luma_scrape/ops/ as in the table above
+```
 
 **On GitHub-hosted runners.** `.github/workflows/external-health-check.yml` runs `external_health_check.py` on `ubuntu-latest` every 30 minutes and alerts if either table is >45 min stale. It does not depend on the workstation. An open issue labelled `outage-alert` marks an ongoing incident: it is opened (with an email) when data goes stale and closed (with a "resolved" email) when data is fresh again. Each run re-enables the workflow so it can't be disabled for inactivity. Test the alert path with:
 
